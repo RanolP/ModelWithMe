@@ -6,29 +6,27 @@ val MwmCommand = base("mwm") { cmd ->
     "help" {
         execute("Show the help") {
             help(cmd).forEach { sender.sendMessage(it) }
-            CommandResult.Ok
         }
     }
     "toolbox" {
         execute("Show the toolbox") {
             sender.sendMessage("툴박스를 보여준다!!")
-            CommandResult.Ok
         }
     }
     "get" {
-        IntOption("id") { idGetter ->
+        IntOption("id") { getId ->
             execute("Get the model with id <id>") {
-                val id = idGetter.getOrError { return@execute CommandResult.Err(it) }
+                val id = getId()
                 sender.sendMessage("ID ${id}를 꺼내자!!")
-                CommandResult.Ok
             }
         }
-        StringOption("name") { nameGetter ->
+        StringOption("name") { getName ->
             execute("Get the model named <name>") {
-                val name = nameGetter.getOrError { return@execute CommandResult.Err(it) }
+                val name = getName()
                 sender.sendMessage("${name}을 꺼내자!!")
-                CommandResult.Ok
             }
         }
     }
+}.onError {
+    sender.sendMessage(it.message ?: "Unexpected error")
 }.toCommandExecutor()
