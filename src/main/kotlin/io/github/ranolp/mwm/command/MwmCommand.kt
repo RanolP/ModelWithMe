@@ -1,6 +1,8 @@
 package io.github.ranolp.mwm.command
 
 import io.github.ranolp.mwm.base.command.*
+import io.github.ranolp.mwm.block.Modeler
+import org.bukkit.entity.Player
 
 val MwmCommand = base("mwm") { cmd ->
     "help" {
@@ -8,25 +10,22 @@ val MwmCommand = base("mwm") { cmd ->
             help(cmd).forEach { sender.sendMessage(it) }
         }
     }
-    "toolbox" {
-        execute("Show the toolbox") {
-            sender.sendMessage("툴박스를 보여준다!!")
-        }
-    }
     "get" {
-        IntOption("id") { getId ->
-            execute("Get the model with id <id>") {
-                val id = getId()
-                sender.sendMessage("ID ${id}를 꺼내자!!")
+        "modeler" {
+            execute("Get the modeler item") {
+                if (sender !is Player) {
+                    sender.sendMessage("You must be a player")
+                    return@execute
+                }
+                sender.inventory.addItem(Modeler.item)
             }
         }
-        StringOption("name") { getName ->
-            execute("Get the model named <name>") {
-                val name = getName()
-                sender.sendMessage("${name}을 꺼내자!!")
+        IntOption("id") { getId ->
+            execute("Description") {
+                val id = getId()
             }
         }
     }
 }.onError {
     sender.sendMessage(it.message ?: "Unexpected error")
-}.toCommandExecutor()
+}

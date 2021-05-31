@@ -1,5 +1,7 @@
 package io.github.ranolp.mwm
 
+import io.github.ranolp.mwm.base.block.CustomBlockListener
+import io.github.ranolp.mwm.block.Modeler
 import io.github.ranolp.mwm.command.MwmCommand
 import kr.entree.spigradle.annotations.SpigotPlugin
 import org.bukkit.plugin.PluginDescriptionFile
@@ -31,6 +33,10 @@ class MwmPlugin : JavaPlugin {
     ) : super(loader, description, dataFolder, file)
 
     override fun onEnable() {
-        getCommand("mwm")?.setExecutor(MwmCommand)
+        CustomBlockListener.onPluginEnabled()
+
+        getCommand("mwm")?.let(MwmCommand::register)
+
+        Modeler.register()
     }
 }

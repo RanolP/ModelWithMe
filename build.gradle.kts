@@ -1,5 +1,6 @@
 import kr.entree.spigradle.kotlin.*
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import java.net.URI
 
 plugins {
     kotlin("jvm") version "1.4.32"
@@ -14,11 +15,17 @@ repositories {
     mavenCentral()
     papermc()
     protocolLib()
+    maven {
+        name = "Minecraft Libraries"
+        url = URI("https://libraries.minecraft.net")
+    }
 }
 
 dependencies {
     implementation(kotlin("stdlib"))
     implementation(paper("1.16.5"))
+    implementation("com.destroystokyo.paper", "paper-mojangapi", "1.16.5-R0.1-20210531.062257-331")
+    implementation("com.mojang", "brigadier", "1.0.17")
     implementation(protocolLib())
 }
 

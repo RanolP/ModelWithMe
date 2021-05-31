@@ -1,22 +1,16 @@
 package io.github.ranolp.mwm.base.command
 
-import io.github.ranolp.mwm.util.RResult
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
 import kotlin.jvm.Throws
 
-
-typealias ErrorMessage = String
-
-typealias TransformResult<T> = RResult<T, ErrorMessage>
-
-
 interface Option<T> {
-    class ParseError: Error {
+    class ParseError : Error {
         constructor(message: String) : super(message)
         constructor(message: String, cause: Throwable) : super(message, cause)
         constructor(cause: Throwable) : super(cause)
     }
+
     /**
      * Parse the option from the string.
      * If it can't parse, throw an OptionParseError instead.
@@ -33,11 +27,14 @@ object StringOption : Option<String> {
 
 object IntOption : Option<Int> {
     object ParseError : Error()
-    override fun parse(s: String): Int = s.toIntOrNull() ?: throw Option.ParseError("Cannot parse $s as an integer", ParseError)
+
+    override fun parse(s: String): Int =
+        s.toIntOrNull() ?: throw Option.ParseError("Cannot parse $s as an integer", ParseError)
 }
 
-object OnlinePlayerOption:Option<Player>{
+object OnlinePlayerOption : Option<Player> {
     object ParseError : Error()
 
-    override fun parse(s: String): Player = Bukkit.getPlayer(s) ?: throw Option.ParseError("Cannot find player $s", ParseError)
+    override fun parse(s: String): Player =
+        Bukkit.getPlayer(s) ?: throw Option.ParseError("Cannot find player $s", ParseError)
 }

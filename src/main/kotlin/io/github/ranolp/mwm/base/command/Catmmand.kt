@@ -1,20 +1,37 @@
 package io.github.ranolp.mwm.base.command
 
-import io.github.ranolp.mwm.util.RResult
+import com.destroystokyo.paper.brigadier.BukkitBrigadierCommandSource
+import com.destroystokyo.paper.event.brigadier.CommandRegisteredEvent
+import com.mojang.brigadier.builder.LiteralArgumentBuilder.literal
+import com.mojang.brigadier.tree.CommandNode
+import com.mojang.brigadier.tree.LiteralCommandNode
+import io.github.ranolp.mwm.MwmPlugin
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
-import org.bukkit.command.Command
-import org.bukkit.command.CommandExecutor
-import org.bukkit.command.CommandSender
-import org.bukkit.command.TabExecutor
+import org.bukkit.Bukkit
+import org.bukkit.command.*
+import org.bukkit.event.EventHandler
+import org.bukkit.event.HandlerList
+import org.bukkit.event.Listener
 
 sealed class CatmmandError : Error {
-    constructor(message: String) : super(message)
-    constructor(message: String, cause: Throwable) : super(message, cause)
-    constructor(cause: Throwable) : super(cause)
+    val depth: Int
 
-    class InsufficientArgumentError(val current: Int, val expectedMin: Int, val expectedMax: Int) :
+    constructor(depth: Int, message: String) : super(message) {
+        this.depth = depth
+    }
+
+    constructor(depth: Int, message: String, cause: Throwable) : super(message, cause) {
+        this.depth = depth
+    }
+
+    constructor(depth: Int, cause: Throwable) : super(cause) {
+        this.depth = depth
+    }
+
+    class InsufficientArgumentError(depth: Int, val current: Int, val expectedMin: Int, val expectedMax: Int) :
         CatmmandError(
+            depth,
             if (expectedMin == expectedMax) {
                 "Expected $expectedMax arguments but only $current arguments received"
             } else {
@@ -22,15 +39,16 @@ sealed class CatmmandError : Error {
             }
         )
 
-    class UnexpectedTokenError(val expections: List<String>, val actual: String?) :
+    class UnexpectedTokenError(depth: Int, val expectations: List<String>, val actual: String?) :
         CatmmandError(
-            if (expections.isNotEmpty()) {
-                if (expections.size == 1) {
-                    "Expected ${expections[0]}"
+            depth,
+            if (expectations.isNotEmpty()) {
+                if (expectations.size == 1) {
+                    "Expected ${expectations[0]}"
                 } else {
                     "Expected ${
-                        expections.dropLast(1).joinToString(", ")
-                    } or ${expections.last()}"
+                        expectations.dropLast(1).joinToString(", ")
+                    } or ${expectations.last()}"
                 } + if (actual == null) {
                     ", but nothing received"
                 } else {
@@ -45,7 +63,7 @@ sealed class CatmmandError : Error {
             }
         )
 
-    class OptionParseError(cause: Option.ParseError) : CatmmandError(cause)
+    class OptionParseError(depth: Int, cause: Option.ParseError) : CatmmandError(depth, cause)
 }
 
 typealias ErrorHandler = ExecutionContext.(Throwable) -> Unit
@@ -69,13 +87,16 @@ sealed class Catmmand<Self>(val depth: Int) {
 
     abstract fun run(context: ExecutionContext)
 
+    abstract fun <S> createBrigadier(command: PluginCommand): CommandNode<S>?
+
     fun onError(handler: ErrorHandler): Self {
         this.errorHandler = handler
         return self
     }
 
     internal fun runTail(tail: List<Catmmand<*>>, context: ExecutionContext) {
-        val expections = mutableListOf<String>()
+        var expectationsMaxDepth = depth
+        val expectations = mutableListOf<String>()
         var firstCatmmandErrorOtherThanUnexpectedToken: CatmmandError? = null
         for (node in tail) {
             try {
@@ -84,7 +105,13 @@ sealed class Catmmand<Self>(val depth: Int) {
             } catch (t: Throwable) {
                 when (t) {
                     is CatmmandError.UnexpectedTokenError -> {
-                        expections.addAll(t.expections)
+                        if (expectationsMaxDepth < t.depth) {
+                            expectations.clear()
+                            expectationsMaxDepth = t.depth
+                        }
+                        if (expectationsMaxDepth == t.depth) {
+                            expectations.addAll(t.expectations)
+                        }
                     }
                     is CatmmandError -> {
                         if (firstCatmmandErrorOtherThanUnexpectedToken == null) {
@@ -98,11 +125,11 @@ sealed class Catmmand<Self>(val depth: Int) {
         if (firstCatmmandErrorOtherThanUnexpectedToken != null) {
             throw firstCatmmandErrorOtherThanUnexpectedToken
         }
-        throw CatmmandError.UnexpectedTokenError(expections, context.nextArg)
+        throw CatmmandError.UnexpectedTokenError(expectationsMaxDepth, expectations, context.nextArg)
     }
 }
 
-class Base(depth: Int, val label: String, tail: (Base) -> List<Catmmand<*>>) : Catmmand<Base>(depth) {
+class Base(depth: Int, val label: String, tail: (Base) -> List<Catmmand<*>>) : Catmmand<Base>(depth), Listener {
     override val longestChildLength: Int by lazy {
         this.tail.maxOfOrNull { it.longestChildLength } ?: depth
     }
@@ -110,36 +137,43 @@ class Base(depth: Int, val label: String, tail: (Base) -> List<Catmmand<*>>) : C
 
     val tail: List<Catmmand<*>> = tail(this)
 
-    fun toCommandExecutor(): CommandExecutor = CommandExecutor { sender, _, _, args ->
-        run(ExecutionContext(0, sender, args.toList()))
-        true
+    fun register(command: PluginCommand) {
+        val listener = object : Listener {
+            @Suppress("unused")
+            @EventHandler
+            fun <S : BukkitBrigadierCommandSource> onCommandRegister(
+                // because the deprecation from the instability of the api
+                e: @Suppress("deprecation") CommandRegisteredEvent<S>
+            ) {
+                if (e.command != command) {
+                    return
+                }
+
+                e.literal = createBrigadier<S>(command)
+
+                HandlerList.unregisterAll(this)
+            }
+        }
+        Bukkit.getPluginManager().registerEvents(listener, MwmPlugin.INSTANCE)
+        command.setExecutor(toCommandExecutor())
     }
 
-    fun toTabExecutor(): TabExecutor = object : TabExecutor {
-        override fun onCommand(
-            sender: CommandSender,
-            command: Command,
-            label: String,
-            args: Array<String>
-        ): Boolean {
-            run(ExecutionContext(0, sender, args.toList()))
-            return true
-        }
-
-        override fun onTabComplete(
-            sender: CommandSender,
-            command: Command,
-            alias: String,
-            args: Array<out String>
-        ): MutableList<String>? {
-            TODO("Not yet implemented")
-        }
+    private fun toCommandExecutor(): CommandExecutor = CommandExecutor { sender, _, _, args ->
+        run(ExecutionContext(0, sender, args.toList()))
+        true
     }
 
     override fun run(context: ExecutionContext) =
         errorHandler.wrapping(context) {
             runTail(tail, context)
         }
+
+    override fun <S> createBrigadier(command: PluginCommand): LiteralCommandNode<S> =
+        literal<S>(command.name).apply {
+            tail.forEach {
+                it.createBrigadier<S>(command)?.let(::then)
+            }
+        }.build()
 }
 
 class Literal(depth: Int, val literal: String, val tail: List<Catmmand<*>>) : Catmmand<Literal>(depth) {
@@ -153,15 +187,22 @@ class Literal(depth: Int, val literal: String, val tail: List<Catmmand<*>>) : Ca
             if (context.currentArg == this.literal) {
                 runTail(tail, context)
             } else {
-                throw CatmmandError.UnexpectedTokenError(listOf(literal), context.currentArg)
+                throw CatmmandError.UnexpectedTokenError(depth, listOf(literal), context.currentArg)
             }
         }
+
+    override fun <S> createBrigadier(command: PluginCommand): CommandNode<S>? =
+        literal<S>(literal).apply {
+            tail.forEach {
+                it.createBrigadier<S>(command)?.let(::then)
+            }
+        }.build()
 }
 
 class Typed<T>(
     depth: Int,
     val name: String,
-    val transformer: Option<T>,
+    val option: Option<T>,
     tail: (Typed<T>) -> List<Catmmand<*>>
 ) : Catmmand<Typed<T>>(depth) {
     override val longestChildLength: Int by lazy {
@@ -174,18 +215,26 @@ class Typed<T>(
     override fun run(context: ExecutionContext) {
         errorHandler.wrapping(context) {
             val argument = context.currentArg ?: throw CatmmandError.InsufficientArgumentError(
+                depth,
                 context.args.size,
                 depth,
                 longestChildLength
             )
             try {
-                transformer.parse(argument)
+                option.parse(argument)
                 runTail(tail, context)
             } catch (e: Option.ParseError) {
-                throw CatmmandError.OptionParseError(e)
+                throw CatmmandError.OptionParseError(depth, e)
             }
         }
     }
+
+    override fun <S> createBrigadier(command: PluginCommand): CommandNode<S>? =
+        literal<S>("<$name: ${option.javaClass.name}>").apply {
+            tail.forEach {
+                it.createBrigadier<S>(command)?.let(::then)
+            }
+        }.build()
 }
 
 class Execution(depth: Int, val description: String, val body: ExecutionContext.() -> Unit) :
@@ -197,6 +246,8 @@ class Execution(depth: Int, val description: String, val body: ExecutionContext.
         errorHandler.wrapping(context) {
             body(context)
         }
+
+    override fun <S> createBrigadier(command: PluginCommand): CommandNode<S>? = null
 }
 
 
@@ -208,15 +259,8 @@ class ExecutionContext(val currentDepth: Int, val sender: CommandSender, val arg
     val nextDepth: ExecutionContext
         get() = ExecutionContext(currentDepth + 1, sender, args)
 
-    operator fun <T> Typed<T>.invoke(): T = transformer.parse(args[depth - 1])
+    operator fun <T> Typed<T>.invoke(): T = option.parse(args[depth - 1])
 }
-
-fun <T> T?.okOrElse(ifNull: ErrorMessage): TransformResult<T> =
-    if (this != null) {
-        RResult.Ok(this)
-    } else {
-        RResult.Err(ifNull)
-    }
 
 fun help(catmmand: Catmmand<*>): List<Component> = when (catmmand) {
     is Base -> catmmand.tail.flatMap { help(it) }
