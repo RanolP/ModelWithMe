@@ -76,8 +76,9 @@ object CustomBlockListener : Listener {
         }.firstOrNull() ?: return
         destruct(e.block.location)
         e.block.location.getNearbyEntities(0.1, 0.1, 0.1).forEach {
-            it.erase(CustomBlock.KEY)
-            it.remove()
+            if (CustomBlock.KEY in it) {
+                it.remove()
+            }
         }
         if (e.isDropItems && e.player.gameMode != GameMode.CREATIVE) {
             e.isDropItems = false

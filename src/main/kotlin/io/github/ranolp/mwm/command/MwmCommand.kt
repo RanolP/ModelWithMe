@@ -1,6 +1,6 @@
 package io.github.ranolp.mwm.command
 
-import io.github.ranolp.mwm.base.command.*
+import io.github.ranolp.mwm.base.catmmand.*
 import io.github.ranolp.mwm.block.Modeler
 import org.bukkit.entity.Player
 
@@ -20,6 +20,8 @@ val MwmCommand = base("mwm") { cmd ->
                 sender.inventory.addItem(Modeler.item)
             }
         }
+    }
+    "save" {
         IntOption("id") { getId ->
             execute("Description") {
                 val id = getId()

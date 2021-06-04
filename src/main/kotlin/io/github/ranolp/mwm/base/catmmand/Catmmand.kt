@@ -1,8 +1,10 @@
-package io.github.ranolp.mwm.base.command
+package io.github.ranolp.mwm.base.catmmand
 
 import com.destroystokyo.paper.brigadier.BukkitBrigadierCommandSource
 import com.destroystokyo.paper.event.brigadier.CommandRegisteredEvent
+import com.mojang.brigadier.builder.ArgumentBuilder
 import com.mojang.brigadier.builder.LiteralArgumentBuilder.literal
+import com.mojang.brigadier.builder.RequiredArgumentBuilder.argument
 import com.mojang.brigadier.tree.CommandNode
 import com.mojang.brigadier.tree.LiteralCommandNode
 import io.github.ranolp.mwm.MwmPlugin
@@ -87,11 +89,18 @@ sealed class Catmmand<Self>(val depth: Int) {
 
     abstract fun run(context: ExecutionContext)
 
-    abstract fun <S> createBrigadier(command: PluginCommand): CommandNode<S>?
+    abstract fun <S> createBrigadierNode(command: PluginCommand): CommandNode<S>?
 
     fun onError(handler: ErrorHandler): Self {
         this.errorHandler = handler
         return self
+    }
+
+    internal fun <S, T : ArgumentBuilder<S, T>> T.appendAll(command: PluginCommand, tail: List<Catmmand<*>>): T {
+        tail.mapNotNull {
+            it.createBrigadierNode<S>(command)
+        }.forEach(::then)
+        return this
     }
 
     internal fun runTail(tail: List<Catmmand<*>>, context: ExecutionContext) {
@@ -149,7 +158,7 @@ class Base(depth: Int, val label: String, tail: (Base) -> List<Catmmand<*>>) : C
                     return
                 }
 
-                e.literal = createBrigadier<S>(command)
+                e.literal = createBrigadierNode<S>(command)
 
                 HandlerList.unregisterAll(this)
             }
@@ -168,12 +177,8 @@ class Base(depth: Int, val label: String, tail: (Base) -> List<Catmmand<*>>) : C
             runTail(tail, context)
         }
 
-    override fun <S> createBrigadier(command: PluginCommand): LiteralCommandNode<S> =
-        literal<S>(command.name).apply {
-            tail.forEach {
-                it.createBrigadier<S>(command)?.let(::then)
-            }
-        }.build()
+    override fun <S> createBrigadierNode(command: PluginCommand): LiteralCommandNode<S> =
+        literal<S>(command.name).appendAll(command, tail).build()
 }
 
 class Literal(depth: Int, val literal: String, val tail: List<Catmmand<*>>) : Catmmand<Literal>(depth) {
@@ -191,12 +196,8 @@ class Literal(depth: Int, val literal: String, val tail: List<Catmmand<*>>) : Ca
             }
         }
 
-    override fun <S> createBrigadier(command: PluginCommand): CommandNode<S>? =
-        literal<S>(literal).apply {
-            tail.forEach {
-                it.createBrigadier<S>(command)?.let(::then)
-            }
-        }.build()
+    override fun <S> createBrigadierNode(command: PluginCommand): CommandNode<S> =
+        literal<S>(literal).appendAll(command, tail).build()
 }
 
 class Typed<T>(
@@ -229,12 +230,8 @@ class Typed<T>(
         }
     }
 
-    override fun <S> createBrigadier(command: PluginCommand): CommandNode<S>? =
-        literal<S>("<$name: ${option.javaClass.name}>").apply {
-            tail.forEach {
-                it.createBrigadier<S>(command)?.let(::then)
-            }
-        }.build()
+    override fun <S> createBrigadierNode(command: PluginCommand): CommandNode<S> =
+        argument<S, T>(name, option.brigadierArgument).appendAll(command, tail).build()
 }
 
 class Execution(depth: Int, val description: String, val body: ExecutionContext.() -> Unit) :
@@ -247,7 +244,7 @@ class Execution(depth: Int, val description: String, val body: ExecutionContext.
             body(context)
         }
 
-    override fun <S> createBrigadier(command: PluginCommand): CommandNode<S>? = null
+    override fun <S> createBrigadierNode(command: PluginCommand): CommandNode<S>? = null
 }
 
 

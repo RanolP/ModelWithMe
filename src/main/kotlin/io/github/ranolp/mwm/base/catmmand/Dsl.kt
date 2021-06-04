@@ -1,4 +1,4 @@
-package io.github.ranolp.mwm.base.command
+package io.github.ranolp.mwm.base.catmmand
 
 class CatmmandBuilder(
     private val depth: Int,

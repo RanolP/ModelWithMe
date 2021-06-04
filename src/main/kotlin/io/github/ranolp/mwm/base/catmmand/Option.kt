@@ -1,7 +1,8 @@
-package io.github.ranolp.mwm.base.command
+package io.github.ranolp.mwm.base.catmmand
 
-import org.bukkit.Bukkit
-import org.bukkit.entity.Player
+import com.mojang.brigadier.arguments.ArgumentType
+import com.mojang.brigadier.arguments.IntegerArgumentType.integer
+import com.mojang.brigadier.arguments.StringArgumentType.string
 import kotlin.jvm.Throws
 
 interface Option<T> {
@@ -19,10 +20,14 @@ interface Option<T> {
      */
     @Throws(ParseError::class)
     fun parse(s: String): T
+
+    val brigadierArgument: ArgumentType<T>
 }
 
 object StringOption : Option<String> {
     override fun parse(s: String): String = s
+
+    override val brigadierArgument: ArgumentType<String> = string()
 }
 
 object IntOption : Option<Int> {
@@ -30,11 +35,6 @@ object IntOption : Option<Int> {
 
     override fun parse(s: String): Int =
         s.toIntOrNull() ?: throw Option.ParseError("Cannot parse $s as an integer", ParseError)
-}
 
-object OnlinePlayerOption : Option<Player> {
-    object ParseError : Error()
-
-    override fun parse(s: String): Player =
-        Bukkit.getPlayer(s) ?: throw Option.ParseError("Cannot find player $s", ParseError)
+    override val brigadierArgument: ArgumentType<Int> = integer()
 }

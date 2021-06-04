@@ -7,17 +7,6 @@ Create a 3D model in minecraft via building.
 
 ### 추가하는 블록
 
-#### Armourer
-
-모델링을 위한 영역을 선포하고 모델의 세부 사항을 조정하는 블록
-
-사용 가능한 동작들
-
-- Clear (빌딩 가이드 내부 빌딩 블록을 전부 제거)
-- Save (임의 이름으로 저장)
-- Load (임의 이름의 모델을 로드)
-- Change Part (Head, Chest, Legs, Feet, Sword, Bow, Arrow, Block 중 하나로 파트를 변경)
-
 #### (Glass) Equipment Cube
 
 모델 그 자체를 나타내는 블록
