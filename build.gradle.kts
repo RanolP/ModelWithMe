@@ -3,7 +3,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import java.net.URI
 
 plugins {
-    kotlin("jvm") version "1.4.32"
+    kotlin("jvm") version "1.5.10"
     id("kr.entree.spigradle") version "2.2.3"
     id("com.github.johnrengelman.shadow") version "6.1.0"
 }
@@ -58,7 +58,6 @@ spigot {
 
 tasks.withType<KotlinCompile>().configureEach {
     kotlinOptions {
-        useIR = true
         jvmTarget = "11"
     }
 }

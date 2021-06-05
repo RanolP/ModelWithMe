@@ -1,9 +1,11 @@
 package io.github.ranolp.mwm
 
 import io.github.ranolp.mwm.base.block.CustomBlockListener
+import io.github.ranolp.mwm.base.mew.inventory.InventoryUtilListener
 import io.github.ranolp.mwm.block.Modeler
 import io.github.ranolp.mwm.command.MwmCommand
 import kr.entree.spigradle.annotations.SpigotPlugin
+import org.bukkit.Bukkit
 import org.bukkit.plugin.PluginDescriptionFile
 import org.bukkit.plugin.java.JavaPlugin
 import org.bukkit.plugin.java.JavaPluginLoader
@@ -34,6 +36,7 @@ class MwmPlugin : JavaPlugin {
 
     override fun onEnable() {
         CustomBlockListener.onPluginEnabled()
+        Bukkit.getPluginManager().registerEvents(InventoryUtilListener, MwmPlugin.INSTANCE)
 
         getCommand("mwm")?.let(MwmCommand::register)
 

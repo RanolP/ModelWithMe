@@ -1,5 +1,6 @@
 package io.github.ranolp.mwm.base.mew.common
 
+import io.github.ranolp.mwm.util.Disposer
 import java.lang.IllegalStateException
 import kotlin.reflect.KProperty
 
@@ -19,22 +20,31 @@ sealed class Hook<Context, HostData : IHostData<Context, HostProps>, HostProps :
         }
     }
 
-    class StateHook<T, Context, HostData : IHostData<Context, HostProps>, HostProps : IHostProps<Context>>(
+    class StateHook<T : Any?, Context, HostData : IHostData<Context, HostProps>, HostProps : IHostProps<Context>>(
         private val initialize: () -> T,
         reconciler: Reconciler<Context, HostData, HostProps>,
         fiber: Fiber.Composed<Context, HostData, HostProps>
     ) : Hook<Context, HostData, HostProps>(reconciler, fiber) {
         private var _state: T? = null
+        private var isInitialized = false
         private var state: T
             get() {
                 return when (val value = _state) {
-                    null -> initialize().also {
-                        this._state = it
+                    null -> if (!isInitialized) {
+                        isInitialized = true
+                        initialize().also {
+                            this._state = it
+                        }
+                    } else {
+                        // It looks like the caller desired to set it null
+                        @Suppress("UNCHECKED_CAST")
+                        null as T
                     }
                     else -> value
                 }
             }
             set(value) {
+                isInitialized = true
                 _state = value
             }
 
