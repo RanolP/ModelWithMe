@@ -6,6 +6,7 @@ import io.github.ranolp.mwm.base.mew.inventory.*
 import io.github.ranolp.mwm.ext.modifyItemMeta
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.NamedTextColor
+import org.bukkit.Bukkit
 import org.bukkit.Location
 import org.bukkit.Material
 import org.bukkit.event.player.PlayerInteractEvent
@@ -30,14 +31,30 @@ object Modeler : CustomBlock(
                 App(start = 1)
             }
 
-            inventory.openedFor(e.player).onceClosed { dispose() }
+            inventory.openedFor(e.player).onceClosed {
+                println("Dispose!!")
+                dispose()
+            }
         }
     }
 }
 
 @Suppress("FunctionName")
 fun Mew.App(start: Int) {
-    val count by state(start)
+    var count by state(start)
 
-    
+    effect(count) {
+        val id = Bukkit.getScheduler().scheduleSyncDelayedTask(MwmPlugin.INSTANCE, {
+            count += 1
+        }, 20)
+
+        return@effect {
+            Bukkit.getScheduler().cancelTask(id)
+        }
+    }
+
+    Item(
+        material = Material.DIAMOND,
+        name = Component.text("You are opening this for $count second(s).")
+    )
 }

@@ -11,4 +11,8 @@ data class BaseMew<Context, HostData : IHostData<Context, HostProps>, HostProps 
 
     fun <T> state(initialValue: T): Hook.StateHook<T, Context, HostData, HostProps> =
         Hook.StateHook({ initialValue }, reconciler, fiber)
+
+    fun effect(vararg deps: Any?, effect: Effect) {
+        Hook.EffectHook(effect, deps, reconciler, fiber)
+    }
 }

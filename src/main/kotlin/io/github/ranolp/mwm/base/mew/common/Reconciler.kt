@@ -3,15 +3,12 @@ package io.github.ranolp.mwm.base.mew.common
 import io.github.ranolp.mwm.MwmPlugin
 import org.bukkit.Bukkit
 
-
-typealias Disposer = () -> Unit
-
 class Reconciler<Context, HostData : IHostData<Context, HostProps>, HostProps : IHostProps<Context>>(wipRoot: Fiber.Root<Context>) {
     internal var nextUnitOfWork: Fiber<Context>? = wipRoot
     internal val deletions: MutableList<Fiber<Context>> = mutableListOf()
 
-    internal var wipRoot: Fiber<Context>? = wipRoot
-    private var currentRoot: Fiber<Context>? = null
+    internal var wipRoot: Fiber.Root<Context>? = wipRoot
+    internal var currentRoot: Fiber.Root<Context>? = null
 
     private var wipFiber: Fiber<Context>? = null
 
@@ -99,10 +96,10 @@ class Reconciler<Context, HostData : IHostData<Context, HostProps>, HostProps : 
 
 
     private fun reconcileChildren(wipFiber: Fiber<Context>, elements: List<Fiber<Context>?>) {
+        var index = 0
         var oldFiber = wipFiber.old?.child
         var prevSibling: Fiber<Context>? = null
 
-        var index = 0
         while (index < elements.size || oldFiber != null) {
             val element = elements.getOrNull(index)
             var newFiber: Fiber<Context>? = null
@@ -201,15 +198,18 @@ class Reconciler<Context, HostData : IHostData<Context, HostProps>, HostProps : 
         val context = fiber.digContext()!!
 
         when {
-            fiber.effectTag === Fiber.EffectTag.PLACEMENT ->
+            fiber.effectTag === Fiber.EffectTag.PLACEMENT -> {
                 if (fiber is Fiber.Host<*, *, *>) {
                     // we knew that there only be Fiber.Host<Context, HostData, HostProps>
                     @Suppress("UNCHECKED_CAST")
                     fiber as Fiber.Host<Context, HostData, HostProps>
                     fiber.data.placeTo(context)
                 }
+                Hook.EffectHook.run(fiber)
+            }
 
-            fiber.effectTag === Fiber.EffectTag.UPDATE ->
+            fiber.effectTag === Fiber.EffectTag.UPDATE -> {
+                Hook.EffectHook.cancel(fiber)
                 if (fiber is Fiber.Host<*, *, *>) {
                     // we knew that there only be Fiber.Host<Context, HostData, HostProps>
                     @Suppress("UNCHECKED_CAST")
@@ -220,7 +220,10 @@ class Reconciler<Context, HostData : IHostData<Context, HostProps>, HostProps : 
 
                     fiber.data.update(old.props, fiber.props)
                 }
+                Hook.EffectHook.run(fiber)
+            }
             fiber.effectTag === Fiber.EffectTag.DELETION -> {
+                Hook.EffectHook.cancel(fiber)
                 commitDeletion(fiber, context)
                 return
             }

@@ -18,13 +18,20 @@ sealed class Fiber<Context> {
 
     internal abstract fun digContext(): Context?
 
+    abstract fun toStringShort(): String
+
     data class Root<Context>(
         val context: Context,
+        override val old: Fiber<Context>? = null,
     ) : Fiber<Context>() {
         override fun digContext(): Context? = context
+
+        override fun toStringShort(): String = "Root(...)"
+
+        override fun toString(): String = "Root(old=${old?.toStringShort()})"
     }
 
-    class Composed<Context, HostData : IHostData<Context, HostProps>, HostProps: IHostProps<Context>>(
+    data class Composed<Context, HostData : IHostData<Context, HostProps>, HostProps : IHostProps<Context>>(
         val component: BaseMew<Context, HostData, HostProps>.() -> Unit,
         override val parent: Fiber<Context>? = null,
         override val old: Fiber<Context>? = null,
@@ -33,15 +40,23 @@ sealed class Fiber<Context> {
         var hooks: MutableList<Hook<Context, HostData, HostProps>> = mutableListOf()
 
         override fun digContext(): Context? = parent?.digContext()
+
+        override fun toStringShort(): String = "Composed(...)"
+
+        override fun toString(): String = "Composed(old=${old?.toStringShort()}, hooks=$hooks)"
     }
 
-    data class Host<Context, HostData : IHostData<Context, HostProps>, HostProps: IHostProps<Context>>(
+    data class Host<Context, HostData : IHostData<Context, HostProps>, HostProps : IHostProps<Context>>(
         val data: HostData,
         val props: HostProps?,
         override val parent: Fiber<Context>? = null,
         override val old: Fiber<Context>? = null,
     ) : Fiber<Context>() {
         override fun digContext(): Context? = data.context ?: parent?.digContext()
+
+        override fun toStringShort(): String = "Host(...)"
+
+        override fun toString(): String = "Host(old=${old?.toStringShort()})"
     }
 }
 

@@ -14,14 +14,15 @@ object InventoryHost {
     )
 
     data class HostProps(
-        val material: Material? = Material.STONE,
-        val name: Component? = null
+        val material: Material?,
+        val name: Component?
     ) : IHostProps<Context> {
         override val children: List<Fiber<Context>>? = null
     }
 
     class HostData : IHostData<Context, HostProps> {
         private var item: ItemStack? = null
+        private var placedAt: Pair<Inventory, Int>? = null
 
         override val context: Context? = null
 
@@ -37,22 +38,28 @@ object InventoryHost {
         }
 
         override fun update(oldProps: HostProps?, nowProps: HostProps?) {
-            val props = nowProps ?: HostProps()
-
             item?.run {
-                props.material?.let {
+                nowProps?.material?.let {
                     type = it
                 }
                 modifyItemMeta {
-                    props.name?.let {
+                    nowProps?.name?.let {
                         displayName(it)
                     }
+                }
+            }
+            when (val placedAt = placedAt) {
+                null -> return
+                else -> {
+                    placedAt.first.setItem(placedAt.second, item)
                 }
             }
         }
 
         override fun placeTo(context: Context) {
-            context.inventory.setItem(0, item)
+            val slot = 0
+            placedAt = Pair(context.inventory, slot)
+            context.inventory.setItem(slot, item)
         }
 
         override fun deleteFrom(context: Context) {
@@ -66,7 +73,7 @@ object InventoryHost {
         val wipRoot = Fiber.Root(
             context
         ).also {
-            it.child = Fiber.Composed(body)
+            it.child = Fiber.Composed(body, it)
         }
         return Reconciler(wipRoot).startWorkLoop()
     }
@@ -74,3 +81,14 @@ object InventoryHost {
 
 typealias Mew = BaseMew<InventoryHost.Context, InventoryHost.HostData, InventoryHost.HostProps>
 
+fun Mew.Item(
+    material: Material? = Material.STONE,
+    name: Component? = null
+) {
+    children.add(
+        Fiber.Host(
+            InventoryHost.HostData(),
+            InventoryHost.HostProps(material, name)
+        )
+    )
+}
