@@ -28,6 +28,7 @@ object InventoryHost {
 
         private var placedAt: Pair<Inventory, Int>? = null
         private var disposeListeners: Disposer = NO_DISPOSE
+        private var onClick: (InventoryClickEvent.() -> Unit)? = null
 
         override var context: Context? = null
 
@@ -52,6 +53,9 @@ object InventoryHost {
                         displayName(it)
                     }
                 }
+            }
+            nowProps?.onClick?.let {
+                this.onClick = it
             }
             when (val placedAt = placedAt) {
                 null -> return
@@ -78,11 +82,13 @@ object InventoryHost {
         private fun updateListeners(context: Context) {
             disposeListeners()
 
+            val targetSlot = context.index - 1
+
             val disposeClick = context.inventory.onClick {
-                if (context.index != slot) {
+                if (targetSlot != rawSlot) {
                     return@onClick
                 }
-                println("WOW")
+                onClick?.invoke(this)
             }
 
             disposeListeners = {
@@ -97,7 +103,11 @@ object InventoryHost {
         val wipRoot = Fiber.Root(
             context
         ).also {
-            it.child = Fiber.Composed(body, it)
+            it.child = Fiber.Composed(
+                "Root",
+                body,
+                it
+            )
         }
         return Reconciler(wipRoot).startWorkLoop()
     }
@@ -105,11 +115,12 @@ object InventoryHost {
 
 typealias Mew = BaseMew<InventoryHost.Context, InventoryHost.HostData, InventoryHost.HostProps>
 
+@Suppress("FunctionName")
 fun Mew.Item(
     material: Material = Material.STONE,
     name: Component? = null,
     onClick: (InventoryClickEvent.() -> Unit)? = null,
-) {
+) = mew {
     children.add(
         Fiber.Host(
             InventoryHost.HostData(),

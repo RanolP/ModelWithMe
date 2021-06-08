@@ -22,7 +22,7 @@ repositories {
 }
 
 dependencies {
-    implementation(kotlin("stdlib"))
+    api(kotlin("stdlib"))
     implementation(paper("1.16.5"))
     implementation("com.destroystokyo.paper", "paper-mojangapi", "1.16.5-R0.1-20210531.062257-331")
     implementation("com.mojang", "brigadier", "1.0.17")
@@ -58,6 +58,6 @@ spigot {
 
 tasks.withType<KotlinCompile>().configureEach {
     kotlinOptions {
-        jvmTarget = "11"
+        jvmTarget = "15"
     }
 }

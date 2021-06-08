@@ -85,9 +85,8 @@ fun createChestInventory(rows: Int, owner: InventoryHolder? = null, title: Compo
         InventoryUtilListener.openCloseHandlers[it] = InventoryUtilListener.MicroInventoryHandlers(it)
     }
 
-fun Inventory.openedFor(player: Player): Inventory {
+fun Inventory.openFor(player: Player) {
     player.openInventory(this)
-    return this
 }
 
 fun Inventory.onceClosed(receiver: InventoryCloseEvent.() -> Unit): Disposer {
@@ -102,7 +101,7 @@ fun Inventory.onceClosed(receiver: InventoryCloseEvent.() -> Unit): Disposer {
 
 fun Inventory.onClick(receiver: InventoryClickEvent.() -> Unit): Disposer {
     val handler = InventoryUtilListener.openCloseHandlers[this]!!
-    val element = InventoryUtilListener.EventReceiver(true, receiver)
+    val element = InventoryUtilListener.EventReceiver(false, receiver)
 
     handler.clickReceivers += element
     return {

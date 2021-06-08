@@ -2,6 +2,7 @@ package io.github.ranolp.mwm.block
 
 import io.github.ranolp.mwm.MwmPlugin
 import io.github.ranolp.mwm.base.block.CustomBlock
+import io.github.ranolp.mwm.base.mew.common.NO_DISPOSE
 import io.github.ranolp.mwm.base.mew.inventory.*
 import io.github.ranolp.mwm.ext.modifyItemMeta
 import net.kyori.adventure.text.Component
@@ -26,26 +27,24 @@ object Modeler : CustomBlock(
                 rows = 6,
                 title = Component.text("Modeler", NamedTextColor.AQUA)
             ).apply {
-                onClick { e.isCancelled = true }
+                openFor(e.player)
+                onClick {
+                    isCancelled = true
+                }
             }
 
-            val disposeMew = InventoryHost.render(target = inventory) {
+            val dispose = InventoryHost.render(target = inventory) {
                 App(start = 1)
             }
 
-            inventory.openedFor(e.player).apply {
-                onceClosed {
-                    disposeMew()
-                }
-            }
+            inventory.onceClosed { dispose() }
         }
     }
 }
 
 @Suppress("FunctionName")
-fun Mew.App(start: Int) {
+fun Mew.App(start: Int) = mew {
     var count by state(start)
-    var click by state(0)
 
     effect(count) {
         val id = Bukkit.getScheduler().scheduleSyncDelayedTask(MwmPlugin.INSTANCE, {
@@ -56,6 +55,8 @@ fun Mew.App(start: Int) {
             Bukkit.getScheduler().cancelTask(id)
         }
     }
+
+    var click by state(0)
 
     Item(
         material = Material.DIAMOND,

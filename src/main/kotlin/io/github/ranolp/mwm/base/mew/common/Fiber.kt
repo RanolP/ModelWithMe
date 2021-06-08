@@ -9,7 +9,9 @@ sealed class Fiber<Context> {
         DELETION,
     }
 
+    open var id: String? = null
     open val old: Fiber<Context>? = null
+    open var future: Fiber<Context>? = null
     open val parent: Fiber<Context>? = null
     open var child: Fiber<Context>? = null
     open var sibling: Fiber<Context>? = null
@@ -32,18 +34,19 @@ sealed class Fiber<Context> {
     }
 
     data class Composed<Context, HostData : IHostData<Context, HostProps>, HostProps : IHostProps<Context>>(
+        override var id: String?,
         val component: BaseMew<Context, HostData, HostProps>.() -> Unit,
         override val parent: Fiber<Context>? = null,
         override val old: Fiber<Context>? = null,
     ) : Fiber<Context>() {
         var hookIndex = 0
-        var hooks: MutableList<Hook<Context, HostData, HostProps>> = mutableListOf()
+        var hooks: MutableList<Hook> = mutableListOf()
 
         override fun digContext(): Context? = parent?.digContext()
 
         override fun toStringShort(): String = "Composed(...)"
 
-        override fun toString(): String = "Composed(old=${old?.toStringShort()}, hooks=$hooks)"
+        override fun toString(): String = "Composed(id=$id, old=${old?.toStringShort()}, hooks=$hooks)"
     }
 
     data class Host<Context, HostData : IHostData<Context, HostProps>, HostProps : IHostProps<Context>>(

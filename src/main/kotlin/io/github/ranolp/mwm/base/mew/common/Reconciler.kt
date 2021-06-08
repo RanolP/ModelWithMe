@@ -3,32 +3,99 @@ package io.github.ranolp.mwm.base.mew.common
 import io.github.ranolp.mwm.MwmPlugin
 import io.github.ranolp.mwm.util.Disposer
 import org.bukkit.Bukkit
+import java.util.concurrent.LinkedBlockingDeque
+import kotlin.concurrent.thread
 
 class Reconciler<Context, HostData : IHostData<Context, HostProps>, HostProps : IHostProps<Context>>(wipRoot: Fiber.Root<Context>) {
-    internal var nextUnitOfWork: Fiber<Context>? = wipRoot
-    internal val deletions: MutableList<Fiber<Context>> = mutableListOf()
+    sealed class Work {
+        object Interrupt : Work()
+        class Update<Context>(val fiber: Fiber<Context>) : Work()
+        class FullUpdate(val callbacks: MutableList<() -> Unit>) : Work()
+    }
 
-    internal var wipRoot: Fiber.Root<Context>? = wipRoot
-    internal var currentRoot: Fiber.Root<Context>? = null
+    private val deletions: MutableList<Fiber<Context>> = mutableListOf()
+
+    private var wipRoot: Fiber.Root<Context>? = wipRoot
+    private var currentRoot: Fiber.Root<Context>? = null
 
     private var wipFiber: Fiber<Context>? = null
 
-    fun startWorkLoop(): Disposer {
-        val id = Bukkit.getScheduler().scheduleSyncRepeatingTask(MwmPlugin.INSTANCE, {
-            val nextUnitOfWork = nextUnitOfWork
-            if (nextUnitOfWork != null) {
-                this.nextUnitOfWork = performUnitOfWork(
-                    nextUnitOfWork
-                )
-            }
+    private val workQueue: LinkedBlockingDeque<Work> = LinkedBlockingDeque()
 
-            if (nextUnitOfWork == null && wipRoot != null) {
-                commitRoot()
+    internal fun requestRedraw(callback: () -> Unit) {
+        when (val work = workQueue.peekLast()) {
+            is Work.FullUpdate -> work.callbacks += callback
+            else -> workQueue.addLast(Work.FullUpdate(mutableListOf(callback)))
+        }
+    }
+
+    private fun work() {
+        when (val nextUnitOfWork = workQueue.take()) {
+            is Work.Interrupt -> {
+                throw InterruptedException()
             }
-        }, 0, 1)
+            is Work.FullUpdate -> {
+                nextUnitOfWork.callbacks.forEach { it() }
+                val currentRoot = currentRoot
+                if (currentRoot != null) {
+                    wipRoot = Fiber.Root(
+                        currentRoot.context,
+                        currentRoot,
+                    ).also {
+                        it.child = currentRoot.child
+                    }.also {
+                        workQueue.addFirst(Work.Update(it))
+                    }
+                } else {
+                    wipRoot = null
+                }
+                deletions.clear()
+            }
+            is Work.Update<*> -> {
+                @Suppress("UNCHECKED_CAST")
+                nextUnitOfWork as Work.Update<Context>
+                val next = performUnitOfWork(nextUnitOfWork.fiber)
+                if (next != null) {
+                    workQueue.addFirst(Work.Update(next))
+                }
+            }
+        }
+    }
+
+    private fun completeWork() {
+        thread {
+            try {
+                while (true) {
+                    work()
+                    if (workQueue.size == 0) {
+                        val lock = Object()
+                        Bukkit.getScheduler().scheduleSyncDelayedTask(MwmPlugin.INSTANCE) {
+                            commitRoot()
+                            synchronized(lock) {
+                                lock.notify()
+                            }
+                        }
+                        synchronized(lock) {
+                            lock.wait()
+                        }
+                    }
+                }
+            } catch (e: InterruptedException) {
+            }
+        }
+    }
+
+    fun startWorkLoop(): Disposer {
+        when (val wipRoot = wipRoot) {
+            null -> {
+            }
+            else -> workQueue.addLast(Work.Update(wipRoot))
+        }
+
+        completeWork()
 
         return {
-            Bukkit.getScheduler().cancelTask(id)
+            workQueue.addFirst(Work.Interrupt)
         }
     }
 
@@ -77,10 +144,11 @@ class Reconciler<Context, HostData : IHostData<Context, HostProps>, HostProps : 
         }
         fiber.hookIndex = 0
         val component = fiber.component
-        val children = BaseMew(this, fiber).apply {
+        val mew = BaseMew(this, fiber).apply {
             component()
-        }.children
-        reconcileChildren(fiber, children)
+        }
+        fiber.id = mew.id
+        reconcileChildren(fiber, mew.children)
     }
 
     private fun updateHost(fiber: Fiber.Host<Context, HostData, HostProps>) {
@@ -106,7 +174,7 @@ class Reconciler<Context, HostData : IHostData<Context, HostProps>, HostProps : 
             var newFiber: Fiber<Context>? = null
 
             when {
-                oldFiber is Fiber.Composed<*, *, *> && element is Fiber.Composed<*, *, *> -> {
+                oldFiber is Fiber.Composed<*, *, *> && element is Fiber.Composed<*, *, *> && oldFiber.id == element.id -> {
                     // we knew that there only be Fiber.Composed<Context, HostData, HostProps>
                     @Suppress("UNCHECKED_CAST")
                     element as Fiber.Composed<Context, HostData, HostProps>
@@ -116,11 +184,13 @@ class Reconciler<Context, HostData : IHostData<Context, HostProps>, HostProps : 
 
 
                     newFiber = Fiber.Composed(
+                        element.id,
                         element.component,
                         wipFiber,
                         oldFiber
                     ).also {
                         it.effectTag = Fiber.EffectTag.UPDATE
+                        oldFiber.future = it
                     }
                 }
                 oldFiber is Fiber.Host<*, *, *> && element is Fiber.Host<*, *, *> -> {
@@ -138,6 +208,7 @@ class Reconciler<Context, HostData : IHostData<Context, HostProps>, HostProps : 
                         oldFiber,
                     ).also {
                         it.effectTag = Fiber.EffectTag.UPDATE
+                        oldFiber.future = it
                     }
                 }
                 element is Fiber.Host<*, *, *> -> {
@@ -161,6 +232,7 @@ class Reconciler<Context, HostData : IHostData<Context, HostProps>, HostProps : 
                     element as Fiber.Composed<Context, HostData, HostProps>
 
                     newFiber = Fiber.Composed(
+                        element.id,
                         element.component,
                         wipFiber,
                         null,
@@ -210,7 +282,7 @@ class Reconciler<Context, HostData : IHostData<Context, HostProps>, HostProps : 
             }
 
             fiber.effectTag === Fiber.EffectTag.UPDATE -> {
-                Hook.EffectHook.cancel(fiber)
+                val rerun = Hook.EffectHook.cancelIfChanged(fiber)
                 if (fiber is Fiber.Host<*, *, *>) {
                     // we knew that there only be Fiber.Host<Context, HostData, HostProps>
                     @Suppress("UNCHECKED_CAST")
@@ -221,7 +293,7 @@ class Reconciler<Context, HostData : IHostData<Context, HostProps>, HostProps : 
 
                     fiber.data.update(old.props, fiber.props)
                 }
-                Hook.EffectHook.run(fiber)
+                rerun()
             }
             fiber.effectTag === Fiber.EffectTag.DELETION -> {
                 Hook.EffectHook.cancel(fiber)

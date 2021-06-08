@@ -2,17 +2,15 @@ package io.github.ranolp.mwm.base.mew.common
 
 import io.github.ranolp.mwm.util.Disposer
 import java.lang.IllegalStateException
+import java.util.*
 import kotlin.reflect.KProperty
 
-sealed class Hook<Context, HostData : IHostData<Context, HostProps>, HostProps : IHostProps<Context>>(
-    val reconciler: Reconciler<Context, HostData, HostProps>,
-    val fiber: Fiber.Composed<Context, HostData, HostProps>
+sealed class Hook(
+    val reconciler: Reconciler<*, *, *>,
+    val fiber: Fiber.Composed<*, *, *>
 ) {
-    protected inline fun <reified T> getOldHook(): T? {
-        // we knew that there only be Fiber.Composed<Context, HostData, HostProps>
-        @Suppress("UNCHECKED_CAST")
-        val old = fiber.old as Fiber.Composed<Context, HostData, HostProps>?
-        val oldHook = old?.hooks?.getOrNull(fiber.hookIndex) ?: return null
+    protected inline fun <reified T> getHookOn(fiber: Fiber.Composed<*, *, *>?, index: Int): T? {
+        val oldHook = fiber?.hooks?.getOrNull(index) ?: return null
         if (oldHook is T) {
             return oldHook
         } else {
@@ -20,11 +18,18 @@ sealed class Hook<Context, HostData : IHostData<Context, HostProps>, HostProps :
         }
     }
 
-    class StateHook<T : Any?, Context, HostData : IHostData<Context, HostProps>, HostProps : IHostProps<Context>>(
+    protected inline fun <reified T> getOldHook(): T? {
+        // we knew that there only be Fiber.Composed<Context, HostData, HostProps>
+        @Suppress("UNCHECKED_CAST")
+        val old = fiber.old as Fiber.Composed<*, *, *>?
+        return getHookOn<T>(old, fiber.hookIndex)
+    }
+
+    class StateHook<T>(
         private val initialize: () -> T,
-        reconciler: Reconciler<Context, HostData, HostProps>,
-        fiber: Fiber.Composed<Context, HostData, HostProps>
-    ) : Hook<Context, HostData, HostProps>(reconciler, fiber) {
+        reconciler: Reconciler<*, *, *>,
+        fiber: Fiber.Composed<*, *, *>
+    ) : Hook(reconciler, fiber) {
         private var _state: T? = null
         private var isInitialized = false
         private var state: T
@@ -47,11 +52,18 @@ sealed class Hook<Context, HostData : IHostData<Context, HostProps>, HostProps :
                 isInitialized = true
                 _state = value
             }
+        private val index: Int
 
         private var queue: MutableList<(T) -> T> = mutableListOf()
 
         init {
-            val oldHook = getOldHook<StateHook<T, Context, HostData, HostProps>>()
+            index = fiber.hookIndex
+            val oldHook = getOldHook<StateHook<T>>()
+
+            oldHook?.state?.let {
+                state = it
+            }
+
             val actions = oldHook?.queue
 
             actions?.forEach { action ->
@@ -59,7 +71,7 @@ sealed class Hook<Context, HostData : IHostData<Context, HostProps>, HostProps :
             }
 
             fiber.hooks.add(this)
-            fiber.hookIndex++
+            fiber.hookIndex += 1
         }
 
         operator fun getValue(thisValue: Any?, property: KProperty<*>): T {
@@ -67,20 +79,17 @@ sealed class Hook<Context, HostData : IHostData<Context, HostProps>, HostProps :
         }
 
         fun set(value: (T) -> T) {
-            queue.add(value)
-            val currentRoot = reconciler.currentRoot
-            if (currentRoot != null) {
-                reconciler.wipRoot = Fiber.Root(
-                    currentRoot.context,
-                    currentRoot,
-                ).also {
-                    it.child = currentRoot.child
+            reconciler.requestRedraw {
+                var target: Fiber.Composed<*, *, *> = fiber
+                while (true) {
+                    when (val future = target.future) {
+                        is Fiber.Composed<*, *, *> -> target = future
+                        else -> break
+                    }
                 }
-            } else {
-                reconciler.wipRoot = null
+                val hook = getHookOn<StateHook<T>>(target, index) ?: return@requestRedraw
+                hook.queue.add(value)
             }
-            reconciler.nextUnitOfWork = reconciler.wipRoot
-            reconciler.deletions.clear()
         }
 
         operator fun setValue(thisValue: Any?, property: KProperty<*>, value: T) {
@@ -92,28 +101,45 @@ sealed class Hook<Context, HostData : IHostData<Context, HostProps>, HostProps :
         }
     }
 
-    class EffectHook<Context, HostData : IHostData<Context, HostProps>, HostProps : IHostProps<Context>>(
+    class EffectHook(
         effect: Effect,
         private val deps: Array<out Any?>,
-        reconciler: Reconciler<Context, HostData, HostProps>,
-        fiber: Fiber.Composed<Context, HostData, HostProps>
-    ) : Hook<Context, HostData, HostProps>(reconciler, fiber) {
+        reconciler: Reconciler<*, *, *>,
+        fiber: Fiber.Composed<*, *, *>
+    ) : Hook(reconciler, fiber) {
         private var cancel: Disposer? = null
         private val effect: Effect?
 
-        init {
-            val oldHook = getOldHook<EffectHook<Context, HostData, HostProps>>()
+        var hasChanged: Boolean = false
 
-            val hasChanged = !oldHook?.deps.contentEquals(deps)
+        init {
+            val oldHook = getOldHook<EffectHook>()
+
+            val oldDeps = oldHook?.deps
+
+            this.hasChanged = when {
+                oldDeps == null -> true
+                !oldDeps.contentEquals(deps) -> true
+                else -> false
+            }
 
             if (!hasChanged) {
                 this.effect = null
             } else {
                 this.effect = effect
+                this.cancel = oldHook?.cancel
             }
 
             fiber.hooks.add(this)
-            fiber.hookIndex++
+            fiber.hookIndex += 1
+        }
+
+        fun cancel() {
+            this.cancel?.invoke()
+        }
+
+        fun start() {
+            this.cancel = this.effect?.invoke()
         }
 
         companion object {
@@ -121,10 +147,30 @@ sealed class Hook<Context, HostData : IHostData<Context, HostProps>, HostProps :
                 if (fiber !is Fiber.Composed<*, *, *>) {
                     return
                 }
-                fiber.hooks.mapNotNull {
-                    it as? EffectHook<*, *, *>
+                fiber.hooks.asSequence().mapNotNull {
+                    it as? EffectHook
                 }.forEach {
-                    it.cancel?.invoke()
+                    it.cancel()
+                }
+            }
+
+            fun cancelIfChanged(fiber: Fiber<*>): () -> Unit {
+                if (fiber !is Fiber.Composed<*, *, *>) {
+                    return {}
+                }
+                val changed = fiber.hooks.asSequence().mapNotNull {
+                    it as? EffectHook
+                }.filter {
+                    it.hasChanged
+                }
+                changed.forEach {
+                    it.cancel()
+                }
+
+                return {
+                    changed.forEach {
+                        it.start()
+                    }
                 }
             }
 
@@ -133,9 +179,9 @@ sealed class Hook<Context, HostData : IHostData<Context, HostProps>, HostProps :
                     return
                 }
                 fiber.hooks.mapNotNull {
-                    it as? EffectHook<*, *, *>
+                    it as? EffectHook
                 }.forEach {
-                    it.cancel = it.effect?.invoke()
+                    it.start()
                 }
             }
         }
